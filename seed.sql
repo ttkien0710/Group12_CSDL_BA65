@@ -1,4 +1,3 @@
--- Du lieu gia lap phuc vu hoc tap, khong phai thong tin ca nhan thuc.
 USE tour_guide_mini;
 SET NAMES utf8mb4;
 START TRANSACTION;
@@ -44,7 +43,10 @@ INSERT INTO trips (trip_id, customer_id, guide_id, departure_date, status, desti
     (11, 8, 1, '2025-03-28', 'Pending', 'Hà Nội', 2),
     (12, 9, 3, '2025-02-22', 'Cancelled', 'Huế', 4),
     (13, 2, 5, '2025-07-10', 'Pending', 'Đà Lạt', 3),
-    (14, 3, 2, '2025-01-25', 'Cancelled', 'Ninh Bình', 2);
+    (14, 3, 2, '2025-01-25', 'Cancelled', 'Ninh Bình', 2),
+    (15, 5, 1, '2025-04-20', 'Completed', 'Hà Nội', 3),
+    (16, 10, 5, '2025-05-15', 'Completed', 'Cần Thơ', 2),
+    (17, 8, 3, '2025-08-05', 'Completed', 'Huế', 2);
 
 INSERT INTO trip_reports (report_id, trip_id, finished_at, itinerary_summary, feedback, fee) VALUES
     (1, 1, '2025-01-06', 'Tham quan Hà Nội, hoàn thành lịch trình đã thống nhất.', 'Khách hài lòng', 1000000),
@@ -56,7 +58,10 @@ INSERT INTO trip_reports (report_id, trip_id, finished_at, itinerary_summary, fe
     (7, 7, '2025-04-11', 'Tham quan Hội An, hoàn thành lịch trình đã thống nhất.', 'Khách hài lòng', 1100000),
     (8, 8, '2025-06-13', 'Tham quan Đà Lạt, hoàn thành lịch trình đã thống nhất.', 'Khách hài lòng', 1300000),
     (9, 9, '2025-09-10', 'Tham quan Sa Pa, hoàn thành lịch trình đã thống nhất.', 'Khách hài lòng', 600000),
-    (10, 10, '2024-12-16', 'Tham quan TP Hồ Chí Minh, hoàn thành lịch trình đã thống nhất.', 'Khách hài lòng', 1000000);
+    (10, 10, '2024-12-16', 'Tham quan TP Hồ Chí Minh, hoàn thành lịch trình đã thống nhất.', 'Khách hài lòng', 1000000),
+    (11, 15, '2025-04-21', 'Tham quan Hà Nội, hoàn thành lịch trình đã thống nhất.', 'Khách hài lòng', 1000000),
+    (12, 16, '2025-05-16', 'Tham quan Cần Thơ, hoàn thành lịch trình đã thống nhất.', 'Khách hài lòng', 500000),
+    (13, 17, '2025-08-06', 'Tham quan Huế, phí đã được miễn.', 'Khách hài lòng', 0);
 
 INSERT INTO payments (payment_id, trip_id, amount, payment_date, method) VALUES
     (1, 1, 400000, '2025-01-06', 'Cash'),
@@ -68,7 +73,10 @@ INSERT INTO payments (payment_id, trip_id, amount, payment_date, method) VALUES
     (7, 7, 1100000, '2025-04-11', 'BankTransfer'),
     (8, 8, 1300000, '2025-06-13', 'Card'),
     (9, 9, 600000, '2025-09-10', 'Cash'),
-    (10, 10, 1000000, '2024-12-16', 'BankTransfer');
+    (10, 10, 1000000, '2024-12-16', 'BankTransfer'),
+    (11, 15, 1000000, '2025-04-21', 'Card'),
+    (12, 16, 200000, '2025-05-16', 'Cash'),
+    (13, 16, 300000, '2025-05-20', 'BankTransfer');
 
 COMMIT;
 
@@ -85,44 +93,47 @@ SELECT 'trip_reports' AS table_name, COUNT(*) AS row_count FROM trip_reports
 UNION ALL
 SELECT 'payments' AS table_name, COUNT(*) AS row_count FROM payments;
 
--- Kiem tra: foreign_keys (ket qua hop le: 0 dong vi pham).
-SELECT 'guides.region_id' AS relation_name, g.guide_id AS record_id
-FROM guides g LEFT JOIN regions r ON r.region_id=g.region_id WHERE r.region_id IS NULL
+-- Kiem tra tong hop: result = OK khi 0 dong vi pham.
+SELECT 'foreign_keys' AS check_name,
+       IF(COUNT(*)=0,'OK','FAIL') AS result, COUNT(*) AS violations
+FROM (
+    SELECT g.guide_id AS id FROM guides g LEFT JOIN regions r ON r.region_id=g.region_id WHERE r.region_id IS NULL
+    UNION ALL
+    SELECT t.trip_id FROM trips t LEFT JOIN customers c ON c.customer_id=t.customer_id WHERE c.customer_id IS NULL
+    UNION ALL
+    SELECT t.trip_id FROM trips t LEFT JOIN guides g ON g.guide_id=t.guide_id WHERE g.guide_id IS NULL
+    UNION ALL
+    SELECT rp.report_id FROM trip_reports rp LEFT JOIN trips t ON t.trip_id=rp.trip_id WHERE t.trip_id IS NULL
+    UNION ALL
+    SELECT p.payment_id FROM payments p LEFT JOIN trips t ON t.trip_id=p.trip_id WHERE t.trip_id IS NULL
+) v
 UNION ALL
-SELECT 'trips.customer_id',t.trip_id FROM trips t
-LEFT JOIN customers c ON c.customer_id=t.customer_id WHERE c.customer_id IS NULL
+SELECT 'status_report', IF(COUNT(*)=0,'OK','FAIL'), COUNT(*)
+FROM (
+    SELECT t.trip_id FROM trips t LEFT JOIN trip_reports rp ON rp.trip_id=t.trip_id
+    GROUP BY t.trip_id,t.status
+    HAVING (t.status='Completed' AND COUNT(rp.report_id)<>1)
+        OR (t.status<>'Completed' AND COUNT(rp.report_id)<>0)
+) v
 UNION ALL
-SELECT 'trips.guide_id',t.trip_id FROM trips t
-LEFT JOIN guides g ON g.guide_id=t.guide_id WHERE g.guide_id IS NULL
+SELECT 'finish_date', IF(COUNT(*)=0,'OK','FAIL'), COUNT(*)
+FROM (
+    SELECT t.trip_id FROM trips t JOIN trip_reports rp ON rp.trip_id=t.trip_id
+    WHERE rp.finished_at<t.departure_date
+) v
 UNION ALL
-SELECT 'trip_reports.trip_id',rp.report_id FROM trip_reports rp
-LEFT JOIN trips t ON t.trip_id=rp.trip_id WHERE t.trip_id IS NULL
+SELECT 'payment_limit', IF(COUNT(*)=0,'OK','FAIL'), COUNT(*)
+FROM (
+    SELECT p.trip_id FROM payments p LEFT JOIN trip_reports rp ON rp.trip_id=p.trip_id
+    GROUP BY p.trip_id,rp.report_id,rp.fee
+    HAVING rp.report_id IS NULL OR SUM(p.amount)>rp.fee
+) v
 UNION ALL
-SELECT 'payments.trip_id',p.payment_id FROM payments p
-LEFT JOIN trips t ON t.trip_id=p.trip_id WHERE t.trip_id IS NULL;
-
--- Kiem tra: status_report (ket qua hop le: 0 dong vi pham).
-SELECT t.trip_id, t.status, COUNT(rp.report_id) AS report_count
-FROM trips t LEFT JOIN trip_reports rp ON rp.trip_id=t.trip_id
-GROUP BY t.trip_id,t.status
-HAVING (t.status='Completed' AND COUNT(rp.report_id)<>1)
-    OR (t.status<>'Completed' AND COUNT(rp.report_id)<>0);
-
--- Kiem tra: finish_date (ket qua hop le: 0 dong vi pham).
-SELECT t.trip_id,t.departure_date,rp.finished_at
-FROM trips t JOIN trip_reports rp ON rp.trip_id=t.trip_id
-WHERE rp.finished_at<t.departure_date;
-
--- Kiem tra: payment_limit (ket qua hop le: 0 dong vi pham).
-SELECT p.trip_id,rp.fee,SUM(p.amount) AS total_paid
-FROM payments p LEFT JOIN trip_reports rp ON rp.trip_id=p.trip_id
-GROUP BY p.trip_id,rp.report_id,rp.fee
-HAVING rp.report_id IS NULL OR SUM(p.amount)>rp.fee;
-
--- Kiem tra: payment_date (ket qua hop le: 0 dong vi pham).
-SELECT p.payment_id,p.trip_id,p.payment_date,rp.finished_at
-FROM payments p JOIN trip_reports rp ON rp.trip_id=p.trip_id
-WHERE p.payment_date<rp.finished_at;
+SELECT 'payment_date', IF(COUNT(*)=0,'OK','FAIL'), COUNT(*)
+FROM (
+    SELECT p.payment_id FROM payments p JOIN trip_reports rp ON rp.trip_id=p.trip_id
+    WHERE p.payment_date<rp.finished_at
+) v;
 
 -- Quy uoc: phi duoc xac nhan khi lap bao cao hoan thanh (finished_at).
 -- Minh hoa vi pham UNIQUE, KHONG thuc thi:

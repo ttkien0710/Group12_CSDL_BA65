@@ -1,5 +1,5 @@
--- De 10: Quan ly dich vu huong dan du lich. MySQL 8.0.16+.
--- Chay tren may chu chua co CSDL tour_guide_mini.
+-- De 10: Quan ly dich vu huong dan du lich. 
+DROP DATABASE IF EXISTS tour_guide_mini;
 CREATE DATABASE tour_guide_mini CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE tour_guide_mini;
 SET NAMES utf8mb4;
@@ -58,3 +58,22 @@ CREATE TABLE payments (
     CONSTRAINT chk_amount CHECK (amount > 0),
     CONSTRAINT fk_payments_trip FOREIGN KEY (trip_id) REFERENCES trips(trip_id)
 ) ENGINE=InnoDB;
+
+-- trigger chan thu tien khi chua co phi xac nhan hoac vuot phi.
+DELIMITER $$
+CREATE TRIGGER trg_payments_before_insert
+BEFORE INSERT ON payments
+FOR EACH ROW
+BEGIN
+    DECLARE v_fee DECIMAL(14,2);
+    DECLARE v_paid DECIMAL(14,2);
+    SELECT fee INTO v_fee FROM trip_reports WHERE trip_id = NEW.trip_id;
+    IF v_fee IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Chuyen chua co phi duoc xac nhan';
+    END IF;
+    SELECT COALESCE(SUM(amount),0) INTO v_paid FROM payments WHERE trip_id = NEW.trip_id;
+    IF v_paid + NEW.amount > v_fee THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Tong thu vuot phi da xac nhan';
+    END IF;
+END$$
+DELIMITER ;
